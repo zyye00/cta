@@ -8,7 +8,15 @@ from .regimes import FORMAL_REGIMES
 
 def _periods_per_year(index: pd.DatetimeIndex) -> float:
     median_days = index.to_series().diff().dt.days.median()
-    return 365.25 / median_days if median_days and median_days > 0 else np.nan
+    if not median_days or median_days <= 0:
+        return np.nan
+    if median_days <= 2:
+        return 252.0
+    if median_days <= 10:
+        return 52.0
+    if median_days <= 45:
+        return 12.0
+    return 365.25 / median_days
 
 
 def compute_series_regime_performance(

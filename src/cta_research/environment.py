@@ -285,6 +285,15 @@ def _pairwise_details(
     return correlations, pairs
 
 
+def _complete_month_index(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    first_month_end = index.min().to_period("M").end_time.normalize()
+    last_observation = index.max().normalize()
+    last_month_end = last_observation.to_period("M").end_time.normalize()
+    if last_observation < last_observation + pd.offsets.BMonthEnd(0):
+        last_month_end -= pd.offsets.MonthEnd()
+    return pd.date_range(first_month_end, last_month_end, freq="ME")
+
+
 def compute_monthly_environment(
     returns: pd.DataFrame,
     sector_mapping: pd.DataFrame,
@@ -305,11 +314,7 @@ def compute_monthly_environment(
         raise ValueError(f"Sector mapping is missing columns: {sorted(missing)}")
     mapping["index_code"] = mapping["index_code"].astype(str).str.upper()
     sectors = mapping.drop_duplicates("index_code").set_index("index_code")["sector"].to_dict()
-    first_month_end = returns.index.min().to_period("M").end_time.normalize()
-    last_month_end = returns.index.max().to_period("M").end_time.normalize()
-    if last_month_end > pd.Timestamp.today().normalize():
-        last_month_end -= pd.offsets.MonthEnd()
-    month_index = pd.date_range(first_month_end, last_month_end, freq="ME")
+    month_index = _complete_month_index(returns.index)
     records: list[dict[str, object]] = []
     volatility_by_month: dict[pd.Timestamp, pd.Series] = {}
     correlation_by_month: dict[pd.Timestamp, pd.DataFrame] = {}
@@ -375,11 +380,7 @@ def compute_monthly_sector_environment(
     sector_by_code = mapping.drop_duplicates("index_code").set_index("index_code")["sector"]
     unmapped = sorted(set(returns.columns.astype(str).str.upper()).difference(mapped_codes))
     source_counts = sector_by_code.reindex(returns.columns.astype(str).str.upper()).dropna().value_counts()
-    first_month_end = sector_returns.index.min().to_period("M").end_time.normalize()
-    last_month_end = sector_returns.index.max().to_period("M").end_time.normalize()
-    if last_month_end > pd.Timestamp.today().normalize():
-        last_month_end -= pd.offsets.MonthEnd()
-    month_index = pd.date_range(first_month_end, last_month_end, freq="ME")
+    month_index = _complete_month_index(sector_returns.index)
     records: list[dict[str, object]] = []
     volatility_by_month: dict[pd.Timestamp, pd.Series] = {}
     correlation_by_month: dict[pd.Timestamp, pd.DataFrame] = {}
@@ -457,11 +458,7 @@ def _compute_monthly_sector_environment_from_returns(
         raise ValueError("Sector return matrix is empty.")
     sector_returns = sector_returns.copy().sort_index()
     sector_returns.columns = sector_returns.columns.astype(str)
-    first_month_end = sector_returns.index.min().to_period("M").end_time.normalize()
-    last_month_end = sector_returns.index.max().to_period("M").end_time.normalize()
-    if last_month_end > pd.Timestamp.today().normalize():
-        last_month_end -= pd.offsets.MonthEnd()
-    month_index = pd.date_range(first_month_end, last_month_end, freq="ME")
+    month_index = _complete_month_index(sector_returns.index)
     records: list[dict[str, object]] = []
     volatility_by_month: dict[pd.Timestamp, pd.Series] = {}
     correlation_by_month: dict[pd.Timestamp, pd.DataFrame] = {}

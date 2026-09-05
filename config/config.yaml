@@ -1,10 +1,6 @@
 start_date: "2011-07-01"
 end_date: null
 
-data_source:
-  commodity_varieties: "rqdata_dominant"
-  commodity_index: "external_nhci"
-
 rqdata:
   frequency: "1d"
   adjust_type: "pre"
@@ -45,18 +41,6 @@ fund_categories:
     - 基金 03
     - 基金 06
 
-regime_threshold_method: "rolling_median"
 regime_threshold_lookback_months: 36
 regime_threshold_min_periods: 36
-regime_threshold_include_current: false
-
-monthly_anchor: "month_end"
-daily_regime_effective: "next_trading_day"
 validation_target_date: "2017-02-17"
-
-cta_file: null
-cta_product_for_figure: null
-cta_annualization_months: 12
-
-export_figures: false
-export_large_tables: false

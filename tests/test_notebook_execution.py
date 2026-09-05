@@ -1,4 +1,5 @@
 import json
+from io import StringIO
 from pathlib import Path
 from shutil import copy, copytree
 
@@ -7,6 +8,17 @@ import numpy as np
 import pandas as pd
 import yaml
 from nbconvert.preprocessors import ExecutePreprocessor
+
+
+def _read_saved_html_tables(notebook_path: str) -> list[pd.DataFrame]:
+    notebook = nbformat.read(notebook_path, as_version=4)
+    tables: list[pd.DataFrame] = []
+    for cell in notebook.cells:
+        for output in cell.get("outputs", []):
+            html = output.get("data", {}).get("text/html")
+            if html:
+                tables.extend(pd.read_html(StringIO("".join(html) if isinstance(html, list) else html)))
+    return tables
 
 
 def _write_fake_rqdatac(project: Path) -> None:
@@ -64,6 +76,38 @@ def test_download_notebook_resolves_explicit_rqdata_end_date() -> None:
     assert 'END_DATE = config["end_date"] or date.today().isoformat()' in source
     assert source.count('"start_date": request_start') == 2
     assert source.count('"end_date": END_DATE') == 2
+
+
+def test_report_tables_match_saved_notebook_outputs() -> None:
+    report = Path("REPORT.md").read_text(encoding="utf-8")
+    nhci_table = next(
+        table
+        for table in _read_saved_html_tables("notebooks/02_analysis.ipynb")
+        if {"样本数", "年化收益", "夏普比率"}.issubset(table.columns)
+    )
+    for row in nhci_table.itertuples(index=False, name=None):
+        state, observations, annualized_return, sharpe = row
+        assert f"| {state} | {observations} | {annualized_return} | {sharpe:.2f} |" in report
+
+    config = yaml.safe_load(Path("config/config.yaml").read_text(encoding="utf-8"))
+    categories = {
+        fund: category for category, funds in config["fund_categories"].items() for fund in funds
+    }
+    fund_tables = [
+        table
+        for table in _read_saved_html_tables("notebooks/03_fund_analysis.ipynb")
+        if any(str(column).startswith("基金 ") and str(column).endswith(" 夏普") for column in table.columns)
+    ]
+    assert len(fund_tables) == len(categories)
+    for table in fund_tables:
+        sharpe_column = next(
+            str(column)
+            for column in table.columns
+            if str(column).startswith("基金 ") and str(column).endswith(" 夏普")
+        )
+        fund = sharpe_column.removesuffix(" 夏普")
+        sharpes = ["—" if pd.isna(value) else f"{value:.2f}" for value in table[sharpe_column]]
+        assert f"| {categories[fund]}—{fund} | {' | '.join(sharpes)} |" in report
 
 
 def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> None:
@@ -156,6 +200,8 @@ def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> 
             assert "基金 01" in serialized
         if notebook_name == "02_analysis.ipynb":
             source = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+            assert source.index("sys.path.insert") < source.index("from cta_research import")
+            assert "Path(cta_research.__file__).resolve().is_relative_to" in source
             assert 'nhci_table.columns = ["样本数", "年化收益", "夏普比率"]' in source
             assert "compute_monthly_sector_environment" not in source
             assert "compute_cta" not in source
@@ -163,6 +209,8 @@ def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> 
             assert "sharey=True" in source
         if notebook_name == "03_fund_analysis.ipynb":
             source = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+            assert source.index("sys.path.insert") < source.index("from cta_research import")
+            assert "Path(cta_research.__file__).resolve().is_relative_to" in source
             assert "plot_fund_vs_nhci" in source
             assert "plot_market_environment" not in source
             assert "compute_cta" not in source
@@ -171,17 +219,38 @@ def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> 
             assert serialized.index("截面类产品") < serialized.index("趋势类产品")
             assert 'fund_categories = config["fund_categories"]' in source
             assert 'category": category' in source
+            assert "compute_regime_annualized_returns" in source
+            assert "periods_per_year=config" not in source
         if notebook_name == "04_sector_volatility_contributions.ipynb":
             source = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+            assert source.index("sys.path.insert") < source.index("from cta_research import")
+            assert "Path(cta_research.__file__).resolve().is_relative_to" in source
             assert "compute_sector_volatility_contribution_shares" in source
             assert "plot_sector_volatility_river" in source
     formal_config = yaml.safe_load(
         (project / "config" / "config.yaml").read_text(encoding="utf-8")
     )
     assert formal_config["environment_lookback_months"] == 3
+    assert formal_config["aggregation_method"] == "sector_equal"
+    assert formal_config["annualization_days"] == 252
+    assert formal_config["min_observations"] == 40
+    assert formal_config["min_pair_observations"] == 40
     assert formal_config["ramp_in_months"] == 6
     assert formal_config["regime_threshold_lookback_months"] == 36
     assert formal_config["regime_threshold_min_periods"] == 36
+    removed_config_keys = {
+        "data_source",
+        "regime_threshold_method",
+        "regime_threshold_include_current",
+        "monthly_anchor",
+        "daily_regime_effective",
+        "cta_file",
+        "cta_product_for_figure",
+        "cta_annualization_months",
+        "export_figures",
+        "export_large_tables",
+    }
+    assert removed_config_keys.isdisjoint(formal_config)
     expected_figures = [
         "figure_1_volatility.png",
         "figure_2_correlation.png",
@@ -192,7 +261,6 @@ def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> 
         "sector_volatility_contribution_river.png",
     ]
     assert all((project / "figures" / name).is_file() for name in expected_figures)
-
     dominant_after = pd.read_parquet(raw_dir / "dominant_prices.parquet")
     index_99_after = pd.read_parquet(raw_dir / "index_99_prices.parquet")
     assert len(dominant_after) == initial_rows + 2 * len(codes)

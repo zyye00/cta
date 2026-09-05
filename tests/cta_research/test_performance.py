@@ -48,6 +48,43 @@ def test_compute_regime_annualized_returns_excludes_insufficient_history() -> No
     assert np.isnan(result.loc[("HV_HC", "Flat"), "annualized_sharpe"])
 
 
+@pytest.mark.parametrize(
+    ("frequency", "periods_per_year"),
+    [("D", 252.0), ("7D", 52.0), ("30D", 12.0), ("90D", 365.25 / 90)],
+)
+def test_series_regime_performance_infers_standard_frequency(
+    frequency: str, periods_per_year: float
+) -> None:
+    dates = pd.date_range("2020-01-01", periods=4, freq=frequency)
+    values = pd.Series(1.01 ** np.arange(4), index=dates, name="Fund")
+    daily_regimes = pd.DataFrame({"regime": "LV_LC"}, index=dates)
+
+    result = compute_series_regime_performance(values, daily_regimes)
+
+    assert result.loc["LV_LC", "annualized_return"] == pytest.approx(1.01**periods_per_year - 1)
+
+
+def test_aligned_series_share_one_inferred_annualization_frequency() -> None:
+    dates = pd.date_range("2020-01-01", periods=6, freq="7D")
+    values = pd.DataFrame(
+        {
+            "Fund": 1.01 ** np.arange(6),
+            "NHCI": 1.01 ** np.arange(6),
+        },
+        index=dates,
+    )
+    daily_regimes = pd.DataFrame({"regime": "LV_LC"}, index=dates)
+
+    result = compute_regime_annualized_returns(values, daily_regimes)
+
+    assert result.loc[("LV_LC", "Fund"), "annualized_return"] == pytest.approx(
+        result.loc[("LV_LC", "NHCI"), "annualized_return"]
+    )
+    assert result.loc[("LV_LC", "Fund"), "annualized_sharpe"] == pytest.approx(
+        result.loc[("LV_LC", "NHCI"), "annualized_sharpe"]
+    )
+
+
 def test_compute_regime_cumulative_returns_keeps_only_active_state_returns() -> None:
     dates = pd.date_range("2020-01-01", periods=5, freq="D")
     values = pd.Series([100.0, 110.0, 121.0, 100.0, 105.0], index=dates)

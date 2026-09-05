@@ -37,7 +37,7 @@ class SectorResearchContext:
     dominant_prices: pd.DataFrame
     sector_mapping: pd.DataFrame
     daily_returns: pd.DataFrame
-    sector_returns: pd.DataFrame
+    unramped_sector_returns: pd.DataFrame
     ramp_in_result: RampInEnvironmentResult
     environment_result: MonthlyEnvironmentResult
     monthly_environment: pd.DataFrame
@@ -156,7 +156,7 @@ def build_sector_research_context(
         dominant_prices=dominant_prices,
         sector_mapping=sector_mapping,
         daily_returns=daily_returns,
-        sector_returns=compute_sector_returns(daily_returns, sector_mapping),
+        unramped_sector_returns=compute_sector_returns(daily_returns, sector_mapping),
         ramp_in_result=ramp_in_result,
         environment_result=environment_result,
         monthly_environment=monthly_environment,

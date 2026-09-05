@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
@@ -66,6 +67,12 @@ from cta_research.rqdata import (
 )
 
 matplotlib.use("Agg")
+
+
+@pytest.fixture(autouse=True)
+def close_matplotlib_figures() -> None:
+    yield
+    plt.close("all")
 
 
 def test_rqdata_normalization_and_commodity_selection() -> None:
@@ -248,8 +255,8 @@ def test_formal_context_uses_configured_ramp_in_environment(monkeypatch, tmp_pat
             "end_date": None,
             "aggregation_method": "sector_equal",
             "environment_lookback_months": 3,
-            "min_observations": 0,
-            "min_pair_observations": 0,
+            "min_observations": 40,
+            "min_pair_observations": 40,
             "annualization_days": 252,
             "ramp_in_months": 6,
             "regime_threshold_lookback_months": 36,
@@ -312,7 +319,7 @@ def test_formal_context_uses_configured_ramp_in_environment(monkeypatch, tmp_pat
     context = build_sector_research_context(config_path)
 
     assert len(calls) == 1
-    assert calls[0][2:] == ("sector_equal", 3, 0, 0, 252, 6)
+    assert calls[0][2:] == ("sector_equal", 3, 40, 40, 252, 6)
     assert context.ramp_in_result is fake_ramp
     assert context.environment_result is fake_result
 
@@ -554,6 +561,29 @@ def test_sector_volatility_contribution_shares_normalize_valid_sectors() -> None
     assert weighted.loc[pd.Timestamp("2020-01-31"), "谷物"] == pytest.approx(1 / 3)
     assert weighted.loc[pd.Timestamp("2020-01-31"), "黑色"] == pytest.approx(2 / 3)
     assert weighted.sum(axis=1).iloc[0] == pytest.approx(1.0)
+
+
+def test_monthly_environment_excludes_partial_final_month() -> None:
+    dates = pd.bdate_range("2020-01-01", "2020-02-03")
+    returns = pd.DataFrame(
+        {
+            "A": np.sin(np.arange(len(dates)) / 5),
+            "B": np.cos(np.arange(len(dates)) / 7),
+        },
+        index=dates,
+    )
+    sectors = pd.DataFrame({"index_code": ["A", "B"], "sector": ["grains", "metals"]})
+
+    result = compute_monthly_environment(
+        returns,
+        sectors,
+        lookback_months=1,
+        min_observations=1,
+        min_pair_observations=1,
+        annualization_days=1,
+    )
+
+    assert result.metrics.index.tolist() == [pd.Timestamp("2020-01-31")]
 
 
 def test_linear_ramp_weights_use_calendar_months_without_restarting() -> None:
