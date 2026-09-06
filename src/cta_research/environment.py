@@ -294,10 +294,17 @@ def _complete_month_index(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
     return pd.date_range(first_month_end, last_month_end, freq="ME")
 
 
+def _fixed_day_lookback(data: pd.DataFrame, month_end: pd.Timestamp, lookback_days: int) -> pd.DataFrame:
+    if not isinstance(lookback_days, int) or lookback_days <= 0:
+        raise ValueError("lookback_days must be a positive integer.")
+    window_start = month_end - pd.Timedelta(days=lookback_days)
+    return data.loc[(data.index > window_start) & (data.index <= month_end)]
+
+
 def compute_monthly_environment(
     returns: pd.DataFrame,
     sector_mapping: pd.DataFrame,
-    lookback_months: int = 6,
+    lookback_days: int = 180,
     min_observations: int = 100,
     min_pair_observations: int = 100,
     annualization_days: int = 252,
@@ -323,8 +330,7 @@ def compute_monthly_environment(
     for month_end in month_index:
         available_dates = returns.index[returns.index <= month_end]
         observation_end = available_dates.max() if len(available_dates) else pd.NaT
-        window_start = month_end - pd.DateOffset(months=lookback_months)
-        window = returns.loc[(returns.index > window_start) & (returns.index <= month_end)]
+        window = _fixed_day_lookback(returns, month_end, lookback_days)
         observations = window.notna().sum()
         valid_codes = observations.index[observations.ge(min_observations)].tolist()
         excluded = {
@@ -367,7 +373,7 @@ def compute_monthly_environment(
 def compute_monthly_sector_environment(
     returns: pd.DataFrame,
     sector_mapping: pd.DataFrame,
-    lookback_months: int = 6,
+    lookback_days: int = 180,
     min_observations: int = 100,
     min_pair_observations: int = 100,
     annualization_days: int = 252,
@@ -387,8 +393,7 @@ def compute_monthly_sector_environment(
     exclusions_by_month: dict[pd.Timestamp, dict[str, str]] = {}
     sector_counts_by_month: dict[pd.Timestamp, pd.Series] = {}
     for month_end in month_index:
-        window_start = month_end - pd.DateOffset(months=lookback_months)
-        window = sector_returns.loc[(sector_returns.index > window_start) & (sector_returns.index <= month_end)]
+        window = _fixed_day_lookback(sector_returns, month_end, lookback_days)
         observations = window.notna().sum()
         valid_sectors = observations.index[observations.ge(min_observations)].tolist()
         excluded = {
@@ -448,7 +453,7 @@ def _compute_monthly_sector_environment_from_returns(
     sector_returns: pd.DataFrame,
     source_counts: pd.Series,
     unmapped: Iterable[str],
-    lookback_months: int,
+    lookback_days: int,
     min_observations: int,
     min_pair_observations: int,
     annualization_days: int,
@@ -465,8 +470,7 @@ def _compute_monthly_sector_environment_from_returns(
     exclusions_by_month: dict[pd.Timestamp, dict[str, str]] = {}
     sector_counts_by_month: dict[pd.Timestamp, pd.Series] = {}
     for month_end in month_index:
-        window_start = month_end - pd.DateOffset(months=lookback_months)
-        window = sector_returns.loc[(sector_returns.index > window_start) & (sector_returns.index <= month_end)]
+        window = _fixed_day_lookback(sector_returns, month_end, lookback_days)
         observations = window.notna().sum()
         valid_sectors = observations.index[observations.ge(min_observations)].tolist()
         excluded = {
@@ -529,7 +533,7 @@ def compute_monthly_environment_by_aggregation(
     returns: pd.DataFrame,
     sector_mapping: pd.DataFrame,
     aggregation_method: str,
-    lookback_months: int = 6,
+    lookback_days: int = 180,
     min_observations: int = 100,
     min_pair_observations: int = 100,
     annualization_days: int = 252,
@@ -539,7 +543,7 @@ def compute_monthly_environment_by_aggregation(
         return compute_monthly_sector_environment(
             returns,
             sector_mapping,
-            lookback_months,
+            lookback_days,
             min_observations,
             min_pair_observations,
             annualization_days,
@@ -548,7 +552,7 @@ def compute_monthly_environment_by_aggregation(
         return compute_monthly_environment(
             returns,
             sector_mapping,
-            lookback_months,
+            lookback_days,
             min_observations,
             min_pair_observations,
             annualization_days,
@@ -560,7 +564,7 @@ def compute_monthly_ramp_in_environment_by_aggregation(
     returns: pd.DataFrame,
     sector_mapping: pd.DataFrame,
     aggregation_method: str,
-    lookback_months: int = 6,
+    lookback_days: int = 180,
     min_observations: int = 100,
     min_pair_observations: int = 100,
     annualization_days: int = 252,
@@ -573,7 +577,7 @@ def compute_monthly_ramp_in_environment_by_aggregation(
         returns,
         sector_mapping,
         aggregation_method,
-        lookback_months,
+        lookback_days,
         min_observations,
         min_pair_observations,
         annualization_days,
@@ -598,7 +602,7 @@ def compute_monthly_ramp_in_environment_by_aggregation(
     source_result = compute_monthly_environment(
         mapped_returns,
         mapping,
-        lookback_months,
+        lookback_days,
         min_observations,
         min_pair_observations,
         annualization_days,
@@ -614,7 +618,7 @@ def compute_monthly_ramp_in_environment_by_aggregation(
         ramp_sector_returns,
         source_counts,
         unmapped,
-        lookback_months,
+        lookback_days,
         min_observations,
         min_pair_observations,
         annualization_days,

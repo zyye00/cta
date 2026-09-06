@@ -231,6 +231,7 @@ def test_notebooks_execute_top_to_bottom_with_synthetic_data(tmp_path: Path) -> 
         (project / "config" / "config.yaml").read_text(encoding="utf-8")
     )
     assert formal_config["environment_lookback_months"] == 3
+    assert formal_config["research_month_days"] == 30
     assert formal_config["aggregation_method"] == "sector_equal"
     assert formal_config["annualization_days"] == 252
     assert formal_config["min_observations"] == 40

@@ -24,6 +24,7 @@ paths:
   external_nhci_file: "data/NHCI-20260803.xlsx"
 
 environment_lookback_months: 3
+research_month_days: 30
 annualization_days: 252
 min_observations: 40
 min_pair_observations: 40

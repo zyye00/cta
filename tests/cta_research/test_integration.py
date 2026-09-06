@@ -171,7 +171,7 @@ def test_monthly_environment_uses_product_and_pair_equal_means() -> None:
     result = compute_monthly_environment(
         returns,
         sectors,
-        lookback_months=1,
+        lookback_days=31,
         min_observations=len(dates),
         min_pair_observations=len(dates),
         annualization_days=1,
@@ -196,12 +196,12 @@ def test_environment_dispatch_and_product_pair_identity() -> None:
         {"index_code": ["A", "B", "C"], "sector": ["grains", "grains", "metals"]}
     )
     result = compute_monthly_environment_by_aggregation(
-        returns, sectors, "variety_equal", lookback_months=1, min_observations=1, min_pair_observations=1
+        returns, sectors, "variety_equal", lookback_days=30, min_observations=1, min_pair_observations=1
     )
     month = pd.Timestamp("2020-02-29")
     assert result.metrics.loc[month, "n_varieties"] == 4
     ramp = compute_monthly_ramp_in_environment_by_aggregation(
-        returns, sectors, "variety_equal", lookback_months=1, min_observations=1, min_pair_observations=1
+        returns, sectors, "variety_equal", lookback_days=30, min_observations=1, min_pair_observations=1
     )
     assert ramp.ramp_result.metrics.loc[month, "valid_member_count"] == 4
     assert ramp.ramp_result.metrics.loc[month, "valid_pair_count"] == 6
@@ -255,6 +255,7 @@ def test_formal_context_uses_configured_ramp_in_environment(monkeypatch, tmp_pat
             "end_date": None,
             "aggregation_method": "sector_equal",
             "environment_lookback_months": 3,
+            "research_month_days": 30,
             "min_observations": 40,
             "min_pair_observations": 40,
             "annualization_days": 252,
@@ -319,7 +320,7 @@ def test_formal_context_uses_configured_ramp_in_environment(monkeypatch, tmp_pat
     context = build_sector_research_context(config_path)
 
     assert len(calls) == 1
-    assert calls[0][2:] == ("sector_equal", 3, 40, 40, 252, 6)
+    assert calls[0][2:] == ("sector_equal", 90, 40, 40, 252, 6)
     assert context.ramp_in_result is fake_ramp
     assert context.environment_result is fake_result
 
@@ -373,6 +374,7 @@ def test_breakpoint_scenarios_fix_metric_window_and_scan_threshold_windows(monke
             "min_observations": 100,
             "min_pair_observations": 100,
             "annualization_days": 252,
+            "research_month_days": 30,
         },
         environment_result=fake_result,
         daily_returns=pd.DataFrame(),
@@ -451,6 +453,7 @@ def test_metric_lookback_scenarios_scan_windows_and_validate_config(monkeypatch)
                 "min_pair_observations": 0,
             },
             "annualization_days": 252,
+            "research_month_days": 30,
         },
         daily_returns=pd.DataFrame(),
         sector_mapping=pd.DataFrame(),
@@ -458,7 +461,7 @@ def test_metric_lookback_scenarios_scan_windows_and_validate_config(monkeypatch)
     )
     results = build_metric_lookback_scenarios(context)
     assert list(results) == [1, 3, 6]
-    assert calls == [("sector_equal", 1), ("sector_equal", 3), ("sector_equal", 6)]
+    assert calls == [("sector_equal", 30), ("sector_equal", 90), ("sector_equal", 180)]
     assert all(result.regime_threshold_lookback_months == 36 for result in results.values())
     assert all(result.lookback_months == window for window, result in results.items())
 
@@ -501,7 +504,7 @@ def test_sector_environment_aggregates_equal_weight_sector_portfolios() -> None:
     result = compute_monthly_sector_environment(
         returns,
         sectors,
-        lookback_months=1,
+        lookback_days=31,
         min_observations=len(dates),
         min_pair_observations=len(dates),
         annualization_days=1,
@@ -525,7 +528,7 @@ def test_sector_environment_allows_one_sector_without_pairs() -> None:
     result = compute_monthly_sector_environment(
         returns,
         sectors,
-        lookback_months=1,
+        lookback_days=31,
         min_observations=len(dates),
         min_pair_observations=len(dates),
         annualization_days=1,
@@ -577,13 +580,40 @@ def test_monthly_environment_excludes_partial_final_month() -> None:
     result = compute_monthly_environment(
         returns,
         sectors,
-        lookback_months=1,
+        lookback_days=30,
         min_observations=1,
         min_pair_observations=1,
         annualization_days=1,
     )
 
     assert result.metrics.index.tolist() == [pd.Timestamp("2020-01-31")]
+
+
+def test_monthly_environment_uses_fixed_calendar_day_window() -> None:
+    dates = pd.date_range("2021-01-01", "2021-04-30")
+    returns = pd.DataFrame(
+        {"A": np.arange(len(dates), dtype=float), "B": -np.arange(len(dates), dtype=float)},
+        index=dates,
+    )
+    sectors = pd.DataFrame({"index_code": ["A", "B"], "sector": ["X", "Y"]})
+
+    result = compute_monthly_sector_environment(
+        returns,
+        sectors,
+        lookback_days=3 * 30,
+        min_observations=1,
+        min_pair_observations=1,
+        annualization_days=1,
+    )
+
+    month_end = pd.Timestamp("2021-04-30")
+    expected = returns.loc["2021-01-31":"2021-04-30"]
+    assert len(expected) == 90
+    assert result.volatility_by_month[month_end]["X"] == pytest.approx(expected["A"].std(ddof=1))
+    assert result.correlation_by_month[month_end]["n_observations"].item() == 90
+
+    with pytest.raises(ValueError, match="lookback_days"):
+        compute_monthly_sector_environment(returns, sectors, lookback_days=0)
 
 
 def test_linear_ramp_weights_use_calendar_months_without_restarting() -> None:
@@ -624,7 +654,7 @@ def test_ramp_in_environment_weights_new_varieties_and_pairs() -> None:
         returns,
         sectors,
         "variety_equal",
-        lookback_months=1,
+        lookback_days=30,
         min_observations=1,
         min_pair_observations=1,
         annualization_days=1,
@@ -673,7 +703,7 @@ def test_ramp_in_sector_environment_applies_variety_and_sector_weights() -> None
         returns,
         sectors,
         "sector_equal",
-        lookback_months=1,
+        lookback_days=30,
         min_observations=1,
         min_pair_observations=1,
         annualization_days=1,
