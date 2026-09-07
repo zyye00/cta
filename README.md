@@ -2,6 +2,14 @@
 
 本项目使用国内商品期货行情、板块映射和南华商品指数，构建板块等权的波动—相关性市场环境，并描述不同市场状态下南华商品指数及私募基金净值的历史表现。
 
+## 阅读入口
+
+- [完整研究报告](REPORT.md)：研究设计、主要结果、局限与结论。
+- [数据下载 Notebook](notebooks/01_download.ipynb)：期货元数据与行情的增量下载。
+- [市场环境分析 Notebook](notebooks/02_analysis.ipynb)：板块波动率、相关性、市场状态与南华商品指数表现。
+- [基金匹配分析 Notebook](notebooks/03_fund_analysis.ipynb)：六只匿名基金在不同市场状态下的历史表现。
+- [板块波动率贡献 Notebook](notebooks/04_sector_volatility_contributions.ipynb)：各板块波动率贡献的补充分析。
+
 ## 项目结构
 
 ```text
