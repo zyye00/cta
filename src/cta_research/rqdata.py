@@ -76,6 +76,7 @@ def merge_rqdata_price_updates(cached: pd.DataFrame, updates: pd.DataFrame) -> p
 def select_commodity_instruments(
     future_instruments: pd.DataFrame,
     exchanges: set[str] | None = None,
+    excluded_symbols: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split RQData futures metadata into domestic commodities and exclusions."""
     required = {"underlying_symbol", "exchange"}
@@ -91,6 +92,8 @@ def select_commodity_instruments(
     reasons = pd.Series("non_commodity_exchange", index=data.index, dtype="string")
     reasons.loc[valid_exchange & valid_symbol] = pd.NA
     reasons.loc[~valid_symbol] = "missing_symbol"
+    explicit_reasons = data["underlying_symbol"].map(excluded_symbols or {})
+    reasons.loc[explicit_reasons.notna()] = explicit_reasons.dropna()
     selected_mask = reasons.isna()
     selected = data.loc[selected_mask].copy()
     excluded = data.loc[~selected_mask].assign(exclusion_reason=reasons.loc[~selected_mask]).copy()

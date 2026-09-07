@@ -16,6 +16,12 @@ commodity_exchanges:
   - INE
   - GFEX
 
+# Same underlying commodities as L/PP/V; omit monthly-average derivatives.
+excluded_symbols:
+  L_F: monthly_average_contract
+  PP_F: monthly_average_contract
+  V_F: monthly_average_contract
+
 paths:
   future_instruments: "data/future_instruments.parquet"
   dominant_prices: "data/dominant_prices.parquet"

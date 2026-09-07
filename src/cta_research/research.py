@@ -48,6 +48,7 @@ class SectorResearchContext:
     coverage: pd.DataFrame
     target_audit: pd.Series
     unmapped_symbols: tuple[str, ...]
+    excluded_symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,7 +123,21 @@ def build_sector_research_context(
     )
     mapping_path = project_root / "config" / "commodity_sectors.csv"
     sector_mapping = pd.read_csv(mapping_path)
-    daily_returns = compute_log_returns(dominant_prices)
+    exclusions = config.get("excluded_symbols", {})
+    raw_symbols = set(dominant_prices["underlying_symbol"])
+    excluded_symbols = tuple(sorted(raw_symbols.intersection(exclusions)))
+    if set(sector_mapping["index_code"]).intersection(exclusions):
+        raise ValueError("Explicitly excluded codes must not appear in sector mapping.")
+    coverage = coverage.merge(
+        sector_mapping.rename(columns={"index_code": "underlying_symbol"}),
+        on="underlying_symbol", how="left", validate="one_to_one",
+    )
+    coverage["status"] = np.where(coverage["sector"].notna(), "mapped", "unmapped")
+    coverage["exclusion_reason"] = coverage["underlying_symbol"].map(exclusions)
+    coverage.loc[coverage["exclusion_reason"].notna(), "status"] = "excluded"
+    daily_returns = compute_log_returns(
+        dominant_prices.loc[~dominant_prices["underlying_symbol"].isin(exclusions)]
+    )
     ramp_in_result = compute_monthly_ramp_in_environment_by_aggregation(
         daily_returns,
         sector_mapping,
@@ -167,6 +182,7 @@ def build_sector_research_context(
         coverage=coverage,
         target_audit=target_audit,
         unmapped_symbols=unmapped_symbols,
+        excluded_symbols=excluded_symbols,
     )
 
 

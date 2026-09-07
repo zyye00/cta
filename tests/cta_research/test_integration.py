@@ -78,13 +78,18 @@ def close_matplotlib_figures() -> None:
 def test_rqdata_normalization_and_commodity_selection() -> None:
     raw_metadata = pd.DataFrame(
         {
-            "underlying_symbol": ["CU", "IF", "RB"],
-            "exchange": ["SHFE", "CFFEX", "SHFE"],
+            "underlying_symbol": ["CU", "IF", "L_F", "RB"],
+            "exchange": ["SHFE", "CFFEX", "DCE", "SHFE"],
         }
     )
-    selected, excluded = select_commodity_instruments(raw_metadata)
+    selected, excluded = select_commodity_instruments(
+        raw_metadata, excluded_symbols={"L_F": "monthly_average_contract"}
+    )
     assert selected["underlying_symbol"].tolist() == ["CU", "RB"]
-    assert excluded["underlying_symbol"].tolist() == ["IF"]
+    assert excluded.set_index("underlying_symbol")["exclusion_reason"].to_dict() == {
+        "IF": "non_commodity_exchange",
+        "L_F": "monthly_average_contract",
+    }
 
     raw_prices = pd.DataFrame(
         {"close": [100.0, 101.0]},
@@ -490,6 +495,7 @@ def test_sector_environment_aggregates_equal_weight_sector_portfolios() -> None:
     returns = pd.DataFrame(
         {
             "A": np.arange(1.0, len(dates) + 1),
+            "A_OLD": np.arange(7.0, len(dates) + 7),
             "B": np.arange(3.0, len(dates) + 3),
             "C": -np.arange(1.0, len(dates) + 1),
             "UNKNOWN": 1.0,
@@ -497,7 +503,11 @@ def test_sector_environment_aggregates_equal_weight_sector_portfolios() -> None:
         index=dates,
     )
     sectors = pd.DataFrame(
-        {"index_code": ["A", "B", "C"], "sector": ["grains", "grains", "metals"]}
+        {
+            "index_code": ["A", "A_OLD", "B", "C"],
+            "index_name": ["grain_a", "grain_a", "grain_b", "metal_c"],
+            "sector": ["grains", "grains", "grains", "metals"],
+        }
     )
 
     sector_returns = compute_sector_returns(returns, sectors)
@@ -512,7 +522,7 @@ def test_sector_environment_aggregates_equal_weight_sector_portfolios() -> None:
     month = pd.Timestamp("2020-01-31")
 
     assert list(sector_returns.columns) == ["grains", "metals"]
-    assert sector_returns.loc[dates[0], "grains"] == pytest.approx(2.0)
+    assert sector_returns.loc[dates[0], "grains"] == pytest.approx(3.5)
     assert result.metrics.loc[month, "n_sectors"] == 2
     assert result.metrics.loc[month, "n_pairs"] == 1
     assert result.metrics.loc[month, "correlation"] == pytest.approx(1.0)

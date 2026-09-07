@@ -111,11 +111,37 @@ def compute_log_returns(price_history: pd.DataFrame) -> pd.DataFrame:
     return data.pivot(index="date", columns="index_code", values="return").sort_index()
 
 
+def _merge_named_returns(
+    returns: pd.DataFrame, sector_mapping: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Average same-product code returns before eligibility and ramp-in weighting."""
+    mapping = sector_mapping.copy()
+    mapping["index_code"] = mapping["index_code"].astype(str).str.strip().str.upper()
+    if mapping["index_code"].duplicated().any():
+        raise ValueError("Sector mapping contains duplicate codes.")
+    if "index_name" not in mapping:
+        return returns, mapping
+    if mapping["index_name"].isna().any() or mapping["sector"].isna().any():
+        raise ValueError("Sector mapping contains missing names or sectors.")
+    if mapping.groupby("index_name")["sector"].nunique().gt(1).any():
+        raise ValueError("Same-name codes must belong to the same sector.")
+    data = returns.copy()
+    data.columns = data.columns.astype(str).str.strip().str.upper()
+    for _, group in mapping.groupby("index_name", sort=False):
+        codes = data.columns.intersection(group["index_code"])
+        if len(group) > 1 and len(codes):
+            combined = data[codes].mean(axis=1)
+            data = data.drop(columns=codes)
+            data[group["index_code"].iloc[0]] = combined
+    return data, mapping.drop_duplicates("index_name")
+
+
 def compute_sector_returns(returns: pd.DataFrame, sector_mapping: pd.DataFrame) -> pd.DataFrame:
     """Aggregate mapped commodity returns into equally weighted sector portfolios."""
     required = {"index_code", "sector"}
     if missing := required.difference(sector_mapping.columns):
         raise ValueError(f"Sector mapping is missing columns: {sorted(missing)}")
+    returns, sector_mapping = _merge_named_returns(returns, sector_mapping)
     data = returns.copy()
     data.index = pd.to_datetime(data.index)
     data.columns = data.columns.astype(str).str.strip().str.upper()
@@ -379,6 +405,7 @@ def compute_monthly_sector_environment(
     annualization_days: int = 252,
 ) -> MonthlyEnvironmentResult:
     """Compute sector-equal volatility and sector-pair-equal absolute correlation."""
+    returns, sector_mapping = _merge_named_returns(returns, sector_mapping)
     sector_returns = compute_sector_returns(returns, sector_mapping)
     mapping = sector_mapping[["index_code", "sector"]].copy()
     mapping["index_code"] = mapping["index_code"].astype(str).str.strip().str.upper()
@@ -573,6 +600,8 @@ def compute_monthly_ramp_in_environment_by_aggregation(
     """Compute raw and six-month linear-ramp environment results together."""
     if not isinstance(ramp_in_months, int) or ramp_in_months <= 0:
         raise ValueError("ramp_in_months must be a positive integer.")
+    if aggregation_method == "sector_equal":
+        returns, sector_mapping = _merge_named_returns(returns, sector_mapping)
     raw_result = compute_monthly_environment_by_aggregation(
         returns,
         sector_mapping,
